@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>萬用板設計工具 - power by Ericqw</title>
+  <style>
+    /* 基本樣式 */
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    header {
+      background-color: #0078D7;
+      color: white;
+      padding: 15px;
+      text-align: center;
+    }
+    /* 工具欄 */
+    #toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      padding: 10px;
+      background-color: #f4f4f4;
+      border-bottom: 2px solid #ccc;
+      align-items: center;
+    }
+    #toolbar label,
+    #toolbar input,
+    #toolbar button,
+    #toolbar select {
+      margin: 5px;
+      padding: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    #toolbar input[type="number"] {
+      width: 80px;
+    }
+    /* 讓零件選擇與匯入元件按鈕在同一列 */
+    #componentSelect, #importedComponentButton {
+      width: auto;
+      margin: 5px;
+    }
+    #toolbar input[type="file"] {
+      width: auto;
+    }
+    /* 板子容器與 PCB 網格 */
+    #board-container {
+      width: 100vw;
+      height: 90vh;
+      overflow: hidden;
+      position: relative;
+      background: repeating-linear-gradient(45deg, #000 0px, #000 10px, #333 10px, #333 20px);
+    }
+    #board {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      /* 實際畫面尺寸由 inline style 控制 */
+      transform: translate(-50%, -50%) scale(1);
+      display: grid;
+      background-color: #2e8b57;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    /* 每一格 20px (模擬 2.54mm) */
+    .dot-cell {
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dot {
+      width: 5px;
+      height: 5px;
+      background-color: black;
+      border-radius: 50%;
+    }
+    /* 導線 */
+    .wire {
+      position: absolute;
+      height: 2px;
+      transform-origin: top left;
+      pointer-events: none;
+      z-index: 1;
+    }
+    /* 接腳樣式：DIP 接腳較小，七段接腳略大 */
+    .dip-pin {
+      width: 3px;
+      height: 3px;
+      background-color: orange;
+      border-radius: 50%;
+      cursor: pointer;
+      z-index: 2;
+      position: relative;
+      padding: 2px;
+      margin: -2px;
+    }
+    .seg-pin {
+      width: 4px;
+      height: 4px;
+      background-color: orange;
+      border-radius: 50%;
+      cursor: pointer;
+      z-index: 2;
+      position: relative;
+      padding: 2px;
+      margin: -2px;
+    }
+    /* 接腳標籤 */
+    .pin-label {
+      font-size: 8px;
+      color: #fff;
+      margin-left: 2px;
+    }
+    /* 晶片元件：以黑色矩形顯示 */
+    .component {
+      position: absolute;
+      background-color: black;
+      border: 1px solid #000;
+      font-size: 12px;
+      color: #fff;
+      cursor: move;
+      box-sizing: border-box;
+    }
+    /* 中間標籤：顯示晶片名 */
+    .mid-label {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 3;
+      color: inherit;
+      font-weight: bold;
+    }
+    /* 選取框 */
+    .selection-box {
+      position: absolute;
+      border: 2px dashed #0078d7;
+      background-color: rgba(0,120,215,0.2);
+      pointer-events: none;
+    }
+    .selected {
+      outline: 2px solid red;
+    }
+    /* Modal (新增與編輯) */
+    .modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border: 2px solid #ccc;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      z-index: 1000;
+      display: none;
+    }
+    #editComponentModal {
+      width: 300px;
+      z-index: 11000;
+    }
+    #editComponentModal label {
+      display: block;
+      margin-top: 10px;
+    }
+    #editComponentModal input {
+      width: 95%;
+      padding: 3px;
+      margin-bottom: 5px;
+    }
+    /* 右鍵選單 */
+    #context-menu {
+      position: absolute;
+      display: none;
+      background: #fff;
+      border: 1px solid #ccc;
+      z-index: 10000;
+      min-width: 100px;
+    }
+    #context-menu .context-menu-item {
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    #context-menu .context-menu-item:hover {
+      background-color: #eee;
+    }
+    /* 十字虛線 (拉線預覽) */
+    #crosshair-vertical, #crosshair-horizontal {
+      position: absolute;
+      pointer-events: none;
+      z-index: 10000;
+      display: none;
+    }
+    #crosshair-vertical {
+      width: 1px;
+      height: 100%;
+      border-left: 1px dashed red;
+      top: 0;
+    }
+    #crosshair-horizontal {
+      height: 1px;
+      width: 100%;
+      border-top: 1px dashed red;
+      left: 0;
+    }
+    /* 浮水印 */
+    #watermark {
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      font-size: 12px;
+      color: #999;
+      opacity: 0.3;
+      z-index: 10000;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>萬用板設計工具</h1>
+  </header>
+  <div id="toolbar">
+    <label>每列洞數:</label>
+    <input type="number" id="cols" placeholder="例如 20">
+    <label>每行洞數:</label>
+    <input type="number" id="rows" placeholder="例如 20">
+    <button onclick="generateBoard()">生成板子</button>
+    <button onclick="showAddComponentModal()">新增元件</button>
+    <label>零件選擇:</label>
+    <select id="componentSelect">
+      <option value="">-- 尚無資料 --</option>
+    </select>
+    <button id="importedComponentButton" onclick="addImportedComponent()">新增匯入元件</button>
+    <label>導線顏色:</label>
+    <input type="color" id="wireColor" value="#0000FF">
+    <label>匯入零件檔案:</label>
+    <input type="file" id="importFile" accept=".txt">
+    <button onclick="saveBoard()">存檔</button>
+    <button onclick="loadBoard()">讀檔</button>
+    <button onclick="cancelWireDrawing()">取消拉線</button>
+    <button onclick="undoAction()">上一步</button>
+    <button onclick="redoAction()">下一步</button>
+  </div>
+  
+  <div id="board-container">
+    <div id="board"></div>
+    <div id="crosshair-vertical"></div>
+    <div id="crosshair-horizontal"></div>
+  </div>
+  
+  <div id="watermark">POWER BY Ercqw</div>
+  
+  <!-- 新增元件 Modal -->
+  <div id="addComponentModal" class="modal">
+    <h3>新增元件</h3>
+    <label>晶片名:</label>
+    <input type="text" id="componentName" placeholder="輸入晶片名">
+    <label>封裝類型:</label>
+    <input type="text" id="componentType" placeholder="例如 DIP, 七段">
+    <label>總接腳數:</label>
+    <input type="number" id="componentTotalPins" placeholder="例如 16">
+    <label>寬佔格數:</label>
+    <input type="number" id="componentWidth" placeholder="例如 3">
+    <label>高佔格數:</label>
+    <input type="number" id="componentHeight" placeholder="例如 7">
+    <label>接腳間距 (mm):</label>
+    <input type="number" step="0.01" id="componentPinSpacing" placeholder="例如 2.54">
+    <label>接腳名稱 (逗號分隔):</label>
+    <input type="text" id="componentPinNames" placeholder="例如 VCC,GND,?,...,?">
+    <button onclick="addComponent()">確定</button>
+    <button onclick="hideAddComponentModal()">取消</button>
+  </div>
+  
+  <!-- 編輯元件 Modal -->
+  <div id="editComponentModal" class="modal">
+    <div id="editChipPreview" style="width:150px; height:80px; background:#ccc; border:1px solid blue; margin-bottom:10px; display:flex; align-items:center; justify-content:center; user-select:none;">
+      <span id="previewText">Chip</span>
+    </div>
+    <h3>編輯元件</h3>
+    <label>晶片名:</label>
+    <input type="text" id="editComponentName" placeholder="輸入晶片名">
+    <label>接腳名稱 (逗號分隔):</label>
+    <input type="text" id="editPinNames" placeholder="例如 VCC,GND,?,...,?">
+    <button onclick="confirmEdit()">確定</button>
+    <button onclick="cancelEdit()">取消</button>
+  </div>
+  
+  <!-- 自訂右鍵選單 -->
+  <div id="context-menu"></div>
+  
+  <script>
+    // 全域變數與元素參考
+    const board = document.getElementById("board");
+    const boardContainer = document.getElementById("board-container");
+    const addComponentModal = document.getElementById("addComponentModal");
+    const editComponentModal = document.getElementById("editComponentModal");
+    const importFileInput = document.getElementById("importFile");
+    const componentSelect = document.getElementById("componentSelect");
+    const contextMenu = document.getElementById("context-menu");
+    const previewText = document.getElementById("previewText");
+    const crosshairVertical = document.getElementById("crosshair-vertical");
+    const crosshairHorizontal = document.getElementById("crosshair-horizontal");
+    
+    let scale = 1, offsetX = 0, offsetY = 0;
+    let pathDots = [];
+    let previewWire = null;
+    let placingImportedComponent = false;
+    let draggingImportedComponent = null;
+    let clipboardComponent = null;
+    
+    let actionHistory = [];
+    let redoStack = [];
+    
+    let isDragging = false, dragStartX = 0, dragStartY = 0;
+    let isSelecting = false, selectStartX = 0, selectStartY = 0, selectionBox = null;
+    let currentlyDraggingComponent = null;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    let currentlyEditingComponent = null;
+    
+    // 更新下拉選單（顯示匯入元件資料）
+    function updateComponentSelect() {
+      const data = localStorage.getItem("componentData");
+      if (data) {
+        const components = JSON.parse(data);
+        componentSelect.innerHTML = "";
+        components.forEach((comp, index) => {
+          const option = document.createElement("option");
+          option.value = index;
+          option.textContent = `${comp.chipName} (${comp.type})`;
+          componentSelect.appendChild(option);
+        });
+      } else {
+        componentSelect.innerHTML = "<option value=''>-- 尚無資料 --</option>";
+      }
+    }
+    
+    // 匯入零件檔案
+    // 格式: 晶片名,封裝類型,總接腳數,寬佔格數,高佔格數,接腳間距,接腳名稱...
+    importFileInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const content = evt.target.result;
+        const lines = content.split('\n').filter(line => line.trim() !== "");
+        const componentsData = lines.map(line => {
+          const parts = line.split(',').map(item => item.trim());
+          const chipName = parts.shift();
+          const type = parts.shift();
+          const totalPins = parseInt(parts.shift(), 10);
+          const width = parseInt(parts.shift(), 10);
+          const height = parseInt(parts.shift(), 10);
+          const pinSpacing = parseFloat(parts.shift());
+          const pinNames = parts;
+          while(pinNames.length < totalPins) { pinNames.push("?"); }
+          return { chipName, type, totalPins, width, height, pinSpacing, pinNames };
+        });
+        localStorage.setItem("componentData", JSON.stringify(componentsData));
+        alert("零件資料已成功匯入並儲存。");
+        updateComponentSelect();
+      };
+      reader.readAsText(file);
+    });
+    
+    // 生成 PCB 板（以每格 20px 模擬 2.54mm）
+    function generateBoard() {
+      const cols = parseInt(document.getElementById("cols").value);
+      const rows = parseInt(document.getElementById("rows").value);
+      if (!cols || !rows || cols <= 0 || rows <= 0) {
+        alert("請輸入正確的列數與行數！");
+        return;
+      }
+      board.style.gridTemplateColumns = `repeat(${cols}, 20px)`;
+      board.style.gridTemplateRows = `repeat(${rows}, 20px)`;
+      board.style.width = `${cols * 20}px`;
+      board.style.height = `${rows * 20}px`;
+      board.innerHTML = "";
+      pathDots = [];
+      if(previewWire) {
+        previewWire.remove();
+        previewWire = null;
+      }
+      for (let i = 0; i < cols * rows; i++) {
+        const cell = document.createElement("div");
+        cell.className = "dot-cell";
+        const dot = document.createElement("div");
+        dot.className = "dot connection-point";
+        cell.appendChild(dot);
+        cell.addEventListener("click", (e) => {
+          e.stopPropagation();
+          handleDotClick(dot);
+        });
+        board.appendChild(cell);
+      }
+    }
+    
+    // 將客戶端座標轉換為 board 邏輯座標
+    function getBoardCoordinates(clientX, clientY) {
+      const boardRect = board.getBoundingClientRect();
+      return {
+        x: (clientX - boardRect.left) / scale,
+        y: (clientY - boardRect.top) / scale
+      };
+    }
+    
+    // 處理 dot 點擊（拉線）
+    function handleDotClick(dot) {
+      const rect = dot.getBoundingClientRect();
+      const boardRect = board.getBoundingClientRect();
+      const x = (rect.left + rect.width/2 - boardRect.left) / scale;
+      const y = (rect.top + rect.height/2 - boardRect.top) / scale;
+      commitWire({x, y});
+    }
+    
+    // 處理元件接腳點擊
+    function handlePinClick(pin) {
+      const pinRect = pin.getBoundingClientRect();
+      const boardRect = board.getBoundingClientRect();
+      const x = (pinRect.left + pinRect.width/2 - boardRect.left) / scale;
+      const y = (pinRect.top + pinRect.height/2 - boardRect.top) / scale;
+      commitWire({x, y});
+    }
+    
+    // 提交拉線點
+    function commitWire(point) {
+      if(pathDots.length > 0 && previewWire) {
+        drawWire(pathDots[pathDots.length-1], point);
+        previewWire.remove();
+        previewWire = null;
+      }
+      pathDots.push(point);
+    }
+    
+    // 繪製永久導線
+    function drawWire(start, end) {
+      const wire = document.createElement("div");
+      wire.className = "wire";
+      wire.style.left = `${start.x}px`;
+      wire.style.top = `${start.y}px`;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      wire.style.width = `${Math.hypot(dx, dy)}px`;
+      wire.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      wire.style.backgroundColor = document.getElementById("wireColor").value;
+      board.appendChild(wire);
+      addAction({type:'wire', element: wire});
+    }
+    
+    // 取消拉線
+    function cancelWireDrawing() {
+      pathDots = [];
+      if(previewWire) {
+        previewWire.remove();
+        previewWire = null;
+      }
+      crosshairVertical.style.display = "none";
+      crosshairHorizontal.style.display = "none";
+    }
+    
+    // 更新預覽線與十字虛線（拉線模式下）
+    function updateWirePreviewAndCrosshair(e) {
+      const cur = getBoardCoordinates(e.clientX, e.clientY);
+      if(!previewWire) {
+        previewWire = document.createElement("div");
+        previewWire.className = "wire preview-wire";
+        previewWire.style.pointerEvents = "none";
+        board.appendChild(previewWire);
+      } else {
+        previewWire.style.display = "block";
+      }
+      let lastPoint = pathDots[pathDots.length-1];
+      const dx = cur.x - lastPoint.x;
+      const dy = cur.y - lastPoint.y;
+      previewWire.style.left = `${lastPoint.x}px`;
+      previewWire.style.top = `${lastPoint.y}px`;
+      previewWire.style.width = `${Math.hypot(dx, dy)}px`;
+      previewWire.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+      previewWire.style.backgroundColor = document.getElementById("wireColor").value;
+      
+      const containerRect = boardContainer.getBoundingClientRect();
+      const relX = e.clientX - containerRect.left;
+      const relY = e.clientY - containerRect.top;
+      crosshairVertical.style.left = `${relX}px`;
+      crosshairVertical.style.display = "block";
+      crosshairHorizontal.style.top = `${relY}px`;
+      crosshairHorizontal.style.display = "block";
+    }
+    
+    function hideWirePreviewAndCrosshair() {
+      if(previewWire) { previewWire.style.display = "none"; }
+      crosshairVertical.style.display = "none";
+      crosshairHorizontal.style.display = "none";
+    }
+    
+    // 板子容器滾輪縮放
+    boardContainer.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomSpeed = 0.1;
+      scale = e.deltaY < 0 ? scale + zoomSpeed : Math.max(0.1, scale - zoomSpeed);
+      board.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    });
+    
+    // 板子容器拖曳與框選
+    boardContainer.addEventListener("mousedown", (e) => {
+      if(placingImportedComponent) return;
+      if(e.button === 1) {
+        isDragging = true;
+        dragStartX = e.clientX - offsetX;
+        dragStartY = e.clientY - offsetY;
+        e.preventDefault();
+      } else if(e.button === 0) {
+        selectStartX = e.clientX;
+        selectStartY = e.clientY;
+        isSelecting = true;
+        selectionBox = document.createElement("div");
+        selectionBox.className = "selection-box";
+        selectionBox.style.left = `${selectStartX}px`;
+        selectionBox.style.top = `${selectStartY}px`;
+        document.body.appendChild(selectionBox);
+      }
+    });
+    
+    boardContainer.addEventListener("mousemove", (e) => {
+      if(isDragging) {
+        offsetX = e.clientX - dragStartX;
+        offsetY = e.clientY - dragStartY;
+        board.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+      }
+      if(isSelecting && selectionBox) {
+        const currX = e.clientX;
+        const currY = e.clientY;
+        const left = Math.min(selectStartX, currX);
+        const top = Math.min(selectStartY, currY);
+        const width = Math.abs(currX - selectStartX);
+        const height = Math.abs(currY - selectStartY);
+        selectionBox.style.left = `${left}px`;
+        selectionBox.style.top = `${top}px`;
+        selectionBox.style.width = `${width}px`;
+        selectionBox.style.height = `${height}px`;
+      }
+      if(!placingImportedComponent && pathDots.length > 0) {
+        updateWirePreviewAndCrosshair(e);
+      } else {
+        hideWirePreviewAndCrosshair();
+      }
+      if(placingImportedComponent && draggingImportedComponent) {
+        const cur = getBoardCoordinates(e.clientX, e.clientY);
+        draggingImportedComponent.style.left = `${cur.x}px`;
+        draggingImportedComponent.style.top = `${cur.y}px`;
+      }
+    });
+    
+    boardContainer.addEventListener("mouseup", (e) => {
+      if(isSelecting && selectionBox) {
+        const selRect = selectionBox.getBoundingClientRect();
+        const selectables = board.querySelectorAll(".wire, .component");
+        selectables.forEach(el => {
+          const elRect = el.getBoundingClientRect();
+          if(elRect.left >= selRect.left && elRect.right <= selRect.right &&
+             elRect.top >= selRect.top && elRect.bottom <= selRect.bottom)
+          {
+            el.classList.add("selected");
+          }
+        });
+        selectionBox.remove();
+        selectionBox = null;
+      }
+      isSelecting = false;
+      if(isDragging) isDragging = false;
+      if(placingImportedComponent && draggingImportedComponent && e.button === 0) {
+        placingImportedComponent = false;
+        makeDraggable(draggingImportedComponent);
+        addAction({type:'component', element: draggingImportedComponent});
+        draggingImportedComponent = null;
+      }
+    });
+    
+    boardContainer.addEventListener("mouseleave", (e) => {
+      if(isDragging) isDragging = false;
+      if(isSelecting && selectionBox) {
+        selectionBox.remove();
+        selectionBox = null;
+        isSelecting = false;
+      }
+    });
+    
+    boardContainer.addEventListener("contextmenu", (e) => {
+      if(pathDots.length > 0) {
+        cancelWireDrawing();
+        e.preventDefault();
+        return;
+      }
+      if(isSelecting && selectionBox) {
+        e.preventDefault();
+        selectionBox.remove();
+        selectionBox = null;
+        isSelecting = false;
+        return;
+      }
+    });
+    
+    document.addEventListener("keydown", (e) => {
+      if(e.key === "Delete") {
+        const selectedEls = board.querySelectorAll(".selected");
+        selectedEls.forEach(el => el.remove());
+      }
+    });
+    
+    // 新增元件 (手動輸入)
+    function showAddComponentModal() {
+      addComponentModal.style.display = "block";
+    }
+    function hideAddComponentModal() {
+      addComponentModal.style.display = "none";
+    }
+    function addComponent() {
+      const chipName = document.getElementById("componentName").value;
+      const type = document.getElementById("componentType").value;
+      const totalPins = parseInt(document.getElementById("componentTotalPins").value,10);
+      const width = parseInt(document.getElementById("componentWidth").value,10);
+      const height = parseInt(document.getElementById("componentHeight").value,10);
+      const pinSpacing = parseFloat(document.getElementById("componentPinSpacing").value);
+      let pinNames = document.getElementById("componentPinNames").value.split(',').map(item => item.trim());
+      while(pinNames.length < totalPins) { pinNames.push("?"); }
+      const comp = document.createElement("div");
+      comp.className = "component";
+      const compWidthPx = width * 20;
+      const compHeightPx = height * 20;
+      comp.style.width = `${compWidthPx}px`;
+      comp.style.height = `${compHeightPx}px`;
+      const boardRect = board.getBoundingClientRect();
+      const randLeft = Math.random() * (boardRect.width - compWidthPx);
+      const randTop = Math.random() * (boardRect.height - compHeightPx);
+      comp.style.left = `${randLeft}px`;
+      comp.style.top = `${randTop}px`;
+      
+      comp.dataset.chipName = chipName;
+      comp.dataset.type = type;
+      comp.dataset.totalPins = totalPins;
+      comp.dataset.pinSpacing = pinSpacing;
+      comp.dataset.pinNames = pinNames.join(",");
+      comp.textContent = chipName;
+      board.appendChild(comp);
+      makeDraggable(comp);
+      
+      if(/DIP/i.test(type)) {
+        // 若是 DIP，強制設為黑色透明矩形，並顯示接腳
+        comp.style.backgroundColor = "rgba(0,0,0,0.7)";
+        comp.style.color = "#fff";
+        // 重新生成 DIP 接腳
+        addDIPPins(comp);
+      } else if(/七段/i.test(type)) {
+        comp.style.backgroundColor = "black";
+        comp.style.color = "#fff";
+        add7segPins(comp);
+      }
+      hideAddComponentModal();
+      addAction({type:'component', element: comp});
+    }
+    
+    // 新增匯入元件 (進入拖曳模式)
+    function addImportedComponent() {
+      const data = localStorage.getItem("componentData");
+      if(!data) {
+        alert("尚未匯入任何零件資料！");
+        return;
+      }
+      const components = JSON.parse(data);
+      const index = parseInt(componentSelect.value);
+      if(isNaN(index)) {
+        alert("請選擇一個元件！");
+        return;
+      }
+      const compData = components[index];
+      const comp = document.createElement("div");
+      comp.className = "component";
+      const compWidthPx = compData.width * 20;
+      const compHeightPx = compData.height * 20;
+      comp.style.width = `${compWidthPx}px`;
+      comp.style.height = `${compHeightPx}px`;
+      const boardRect = board.getBoundingClientRect();
+      const randLeft = Math.random() * (boardRect.width - compWidthPx);
+      const randTop = Math.random() * (boardRect.height - compHeightPx);
+      comp.style.left = `${randLeft}px`;
+      comp.style.top = `${randTop}px`;
+      
+      comp.dataset.chipName = compData.chipName;
+      comp.dataset.type = compData.type;
+      comp.dataset.totalPins = compData.totalPins;
+      comp.dataset.pinSpacing = compData.pinSpacing;
+      comp.dataset.pinNames = compData.pinNames.join(",");
+      comp.textContent = compData.chipName;
+      board.appendChild(comp);
+      makeDraggable(comp);
+      
+      if(/DIP/i.test(compData.type)) {
+        comp.style.backgroundColor = "rgba(0,0,0,0.7)";
+        comp.style.color = "#fff";
+        addDIPPins(comp);
+      } else if(/七段/i.test(compData.type)) {
+        comp.style.backgroundColor = "black";
+        comp.style.color = "#fff";
+        add7segPins(comp);
+      }
+      placingImportedComponent = true;
+      draggingImportedComponent = comp;
+    }
+    
+    // 讓元件可拖曳
+    function makeDraggable(el) {
+      el.addEventListener("mousedown", componentMouseDown);
+    }
+    function componentMouseDown(e) {
+      e.stopPropagation();
+      currentlyDraggingComponent = e.currentTarget;
+      const compRect = currentlyDraggingComponent.getBoundingClientRect();
+      dragOffsetX = e.clientX - compRect.left;
+      dragOffsetY = e.clientY - compRect.top;
+      document.addEventListener("mousemove", componentMouseMove);
+      document.addEventListener("mouseup", componentMouseUp);
+    }
+    function componentMouseMove(e) {
+      if(!currentlyDraggingComponent) return;
+      const boardRect = board.getBoundingClientRect();
+      const newLeft = e.clientX - boardRect.left - dragOffsetX;
+      const newTop = e.clientY - boardRect.top - dragOffsetY;
+      currentlyDraggingComponent.style.left = `${newLeft}px`;
+      currentlyDraggingComponent.style.top = `${newTop}px`;
+    }
+    function componentMouseUp(e) {
+      currentlyDraggingComponent = null;
+      document.removeEventListener("mousemove", componentMouseMove);
+      document.removeEventListener("mouseup", componentMouseUp);
+    }
+    
+    // DIP 接腳排列 (兩側各自排列：左側從下到上，右側從上到下)
+    function addDIPPins(comp) {
+      const chipName = comp.dataset.chipName || comp.textContent;
+      const totalPins = parseInt(comp.dataset.totalPins, 10) || 16;
+      const pinsPerSide = totalPins / 2;
+      const pinNames = comp.dataset.pinNames ? comp.dataset.pinNames.split(",") : Array(totalPins).fill("?");
+      
+      // 先保留目前的寬高與背景設定
+      comp.innerHTML = "";
+      // 強制設定 DIP 背景與邊框
+      comp.style.backgroundColor = "rgba(0,0,0,0.7)";
+      comp.style.border = "1px solid #000";
+      
+      // 顯示晶片名
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "mid-label";
+      labelSpan.textContent = chipName;
+      comp.appendChild(labelSpan);
+      
+      // 左側接腳（從下到上排列）
+      const leftContainer = document.createElement("div");
+      leftContainer.style.position = "absolute";
+      leftContainer.style.left = "-20px";
+      leftContainer.style.top = "0";
+      leftContainer.style.width = "20px";
+      leftContainer.style.height = "100%";
+      leftContainer.style.display = "flex";
+      leftContainer.style.flexDirection = "column";
+      leftContainer.style.justifyContent = "space-between";
+      for(let i = 0; i < pinsPerSide; i++){
+        const pinWrapper = document.createElement("div");
+        pinWrapper.style.display = "flex";
+        pinWrapper.style.alignItems = "center";
+        const pin = document.createElement("div");
+        pin.className = "dip-pin connection-point";
+        pin.addEventListener("mousedown", e => e.stopPropagation());
+        pin.addEventListener("click", e => {
+          e.stopPropagation();
+          handlePinClick(pin);
+        });
+        pinWrapper.appendChild(pin);
+        const pinLabel = document.createElement("span");
+        pinLabel.className = "pin-label";
+        pinLabel.textContent = pinNames[i] || "?";
+        pinWrapper.appendChild(pinLabel);
+        leftContainer.appendChild(pinWrapper);
+      }
+      comp.appendChild(leftContainer);
+      
+      // 右側接腳（從上到下排列）
+      const rightContainer = document.createElement("div");
+      rightContainer.style.position = "absolute";
+      rightContainer.style.right = "-20px";
+      rightContainer.style.top = "0";
+      rightContainer.style.width = "20px";
+      rightContainer.style.height = "100%";
+      rightContainer.style.display = "flex";
+      rightContainer.style.flexDirection = "column";
+      rightContainer.style.justifyContent = "space-between";
+      for(let i = pinsPerSide; i < totalPins; i++){
+        const pinWrapper = document.createElement("div");
+        pinWrapper.style.display = "flex";
+        pinWrapper.style.alignItems = "center";
+        const pinLabel = document.createElement("span");
+        pinLabel.className = "pin-label";
+        pinLabel.textContent = pinNames[i] || "?";
+        pinWrapper.appendChild(pinLabel);
+        const pin = document.createElement("div");
+        pin.className = "dip-pin connection-point";
+        pin.addEventListener("mousedown", e => e.stopPropagation());
+        pin.addEventListener("click", e => {
+          e.stopPropagation();
+          handlePinClick(pin);
+        });
+        pinWrapper.appendChild(pin);
+        rightContainer.appendChild(pinWrapper);
+      }
+      comp.appendChild(rightContainer);
+    }
+    
+    // 七段接腳排列 (上下排列，各 5 個接腳，顯示接腳名稱)
+    function add7segPins(comp) {
+      const chipName = comp.dataset.chipName || comp.textContent;
+      comp.innerHTML = "";
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "mid-label";
+      labelSpan.textContent = chipName;
+      comp.appendChild(labelSpan);
+      
+      const pinNames = comp.dataset.pinNames ? comp.dataset.pinNames.split(",") : Array(10).fill("?");
+      
+      // 上排接腳（從上排列 5 個，接腳下方顯示名稱）
+      const topContainer = document.createElement("div");
+      topContainer.style.position = "absolute";
+      topContainer.style.top = "-20px";
+      topContainer.style.left = "0";
+      topContainer.style.width = "100%";
+      topContainer.style.height = "20px";
+      topContainer.style.display = "flex";
+      topContainer.style.justifyContent = "space-between";
+      
+      for(let i = 0; i < 5; i++){
+        const pinWrapper = document.createElement("div");
+        pinWrapper.style.display = "flex";
+        pinWrapper.style.flexDirection = "column";
+        pinWrapper.style.alignItems = "center";
+        const pin = document.createElement("div");
+        pin.className = "seg-pin connection-point";
+        pin.addEventListener("mousedown", e => e.stopPropagation());
+        pin.addEventListener("click", e => {
+          e.stopPropagation();
+          handlePinClick(pin);
+        });
+        pinWrapper.appendChild(pin);
+        const pinLabel = document.createElement("span");
+        pinLabel.className = "pin-label";
+        pinLabel.textContent = pinNames[i] || "?";
+        pinWrapper.appendChild(pinLabel);
+        topContainer.appendChild(pinWrapper);
+      }
+      comp.appendChild(topContainer);
+      
+      // 下排接腳（從下排列 5 個）
+      const bottomContainer = document.createElement("div");
+      bottomContainer.style.position = "absolute";
+      bottomContainer.style.bottom = "-20px";
+      bottomContainer.style.left = "0";
+      bottomContainer.style.width = "100%";
+      bottomContainer.style.height = "20px";
+      bottomContainer.style.display = "flex";
+      bottomContainer.style.justifyContent = "space-between";
+      
+      for(let i = 0; i < 5; i++){
+        const pinWrapper = document.createElement("div");
+        pinWrapper.style.display = "flex";
+        pinWrapper.style.flexDirection = "column";
+        pinWrapper.style.alignItems = "center";
+        const pin = document.createElement("div");
+        pin.className = "seg-pin connection-point";
+        pin.addEventListener("mousedown", e => e.stopPropagation());
+        pin.addEventListener("click", e => {
+          e.stopPropagation();
+          handlePinClick(pin);
+        });
+        pinWrapper.appendChild(pin);
+        const pinLabel = document.createElement("span");
+        pinLabel.className = "pin-label";
+        pinLabel.textContent = pinNames[i+5] || "?";
+        pinWrapper.appendChild(pinLabel);
+        bottomContainer.appendChild(pinWrapper);
+      }
+      comp.appendChild(bottomContainer);
+    }
+    
+    // 右鍵選單
+    function showContextMenu(x, y, actions, target) {
+      contextMenu.innerHTML = "";
+      actions.forEach(action => {
+        if (action) {
+          const item = document.createElement("div");
+          item.className = "context-menu-item";
+          if (action === "edit") item.textContent = "編輯";
+          else if (action === "delete") item.textContent = "刪除";
+          else if (action === "cut") item.textContent = "剪下";
+          else if (action === "paste") item.textContent = "貼上";
+          item.addEventListener("click", () => {
+            hideContextMenu();
+            if (action === "edit") editComponent(target);
+            else if (action === "delete") deleteComponent(target);
+            else if (action === "cut") cutComponent(target);
+            else if (action === "paste") pasteComponent(x, y);
+          });
+          contextMenu.appendChild(item);
+        }
+      });
+      contextMenu.style.left = `${x}px`;
+      contextMenu.style.top = `${y}px`;
+      contextMenu.style.display = "block";
+    }
+    function hideContextMenu() {
+      contextMenu.style.display = "none";
+    }
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#context-menu") && !e.target.closest("#editComponentModal")) {
+        hideContextMenu();
+      }
+    });
+    document.addEventListener("contextmenu", (e) => {
+      if (pathDots.length > 0) {
+        cancelWireDrawing();
+        e.preventDefault();
+        return;
+      }
+      const comp = e.target.closest(".component");
+      if (comp) {
+        showContextMenu(e.clientX, e.clientY, ["edit", "delete", "cut"], comp);
+      } else {
+        hideContextMenu();
+      }
+    });
+    
+    // 右鍵選單動作：編輯、刪除、剪下、貼上
+    function editComponent(comp) {
+      if (!comp) return;
+      currentlyEditingComponent = comp;
+      const currentName = comp.dataset.chipName || comp.textContent;
+      document.getElementById("editComponentName").value = currentName || "";
+      document.getElementById("editPinNames").value = comp.dataset.pinNames || "";
+      previewText.textContent = currentName || "Chip";
+      editComponentModal.style.display = "block";
+    }
+    function deleteComponent(comp) {
+      if (comp) comp.remove();
+    }
+    function cutComponent(comp) {
+      if (comp) {
+        clipboardComponent = comp;
+        comp.remove();
+      }
+    }
+    function pasteComponent(x, y) {
+      if (clipboardComponent) {
+        const boardRect = board.getBoundingClientRect();
+        const newLeft = x - boardRect.left;
+        const newTop = y - boardRect.top;
+        clipboardComponent.style.left = `${newLeft}px`;
+        clipboardComponent.style.top = `${newTop}px`;
+        board.appendChild(clipboardComponent);
+        makeDraggable(clipboardComponent);
+        clipboardComponent = null;
+      }
+    }
+    
+    // 編輯元件 Modal 動作
+    function confirmEdit() {
+      if (!currentlyEditingComponent) return;
+      const newName = document.getElementById("editComponentName").value;
+      const newPinNames = document.getElementById("editPinNames").value;
+      currentlyEditingComponent.dataset.chipName = newName;
+      if (/DIP/i.test(currentlyEditingComponent.dataset.type)) {
+        currentlyEditingComponent.innerHTML = "";
+        currentlyEditingComponent.style.backgroundColor = "rgba(0,0,0,0.7)";
+        currentlyEditingComponent.style.color = "#fff";
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "mid-label";
+        labelSpan.textContent = newName;
+        currentlyEditingComponent.appendChild(labelSpan);
+        addDIPPins(currentlyEditingComponent);
+      } else {
+        currentlyEditingComponent.innerHTML = "";
+        currentlyEditingComponent.style.backgroundColor = "black";
+        currentlyEditingComponent.style.color = "#fff";
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "mid-label";
+        labelSpan.textContent = newName;
+        currentlyEditingComponent.appendChild(labelSpan);
+        add7segPins(currentlyEditingComponent);
+      }
+      currentlyEditingComponent.dataset.pinNames = newPinNames;
+      previewText.textContent = newName;
+      editComponentModal.style.display = "none";
+      currentlyEditingComponent = null;
+    }
+    function cancelEdit() {
+      editComponentModal.style.display = "none";
+      currentlyEditingComponent = null;
+    }
+    
+    // 存檔與讀檔
+    function saveBoard() {
+      const comps = board.querySelectorAll(".component");
+      const compArray = [];
+      comps.forEach(comp => {
+        compArray.push({
+          chipName: comp.dataset.chipName || comp.textContent,
+          type: comp.dataset.type,
+          totalPins: comp.dataset.totalPins,
+          width: comp.style.width,
+          height: comp.style.height,
+          pinNames: comp.dataset.pinNames || ""
+        });
+      });
+      const data = JSON.stringify(compArray);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "board.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    function loadBoard() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "application/json";
+      input.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const compArray = JSON.parse(evt.target.result);
+          board.querySelectorAll(".component").forEach(comp => comp.remove());
+          compArray.forEach(data => {
+            const comp = document.createElement("div");
+            comp.className = "component";
+            comp.dataset.chipName = data.chipName;
+            comp.dataset.type = data.type;
+            comp.dataset.totalPins = data.totalPins;
+            comp.textContent = data.chipName;
+            comp.style.width = data.width;
+            comp.style.height = data.height;
+            comp.dataset.pinNames = data.pinNames;
+            if (/DIP/i.test(data.type)) {
+              comp.style.backgroundColor = "rgba(0,0,0,0.7)";
+              comp.style.color = "#fff";
+              addDIPPins(comp);
+            } else if (/七段/i.test(data.type)) {
+              comp.style.backgroundColor = "black";
+              comp.style.color = "#fff";
+              add7segPins(comp);
+            }
+            board.appendChild(comp);
+            makeDraggable(comp);
+          });
+        };
+        reader.readAsText(file);
+      });
+      input.click();
+    }
+    
+    // Undo / Redo 功能
+    function addAction(action) {
+      actionHistory.push(action);
+      redoStack = [];
+    }
+    function undoAction() {
+      if (actionHistory.length === 0) return;
+      const action = actionHistory.pop();
+      if (action.type === 'wire' || action.type === 'component') {
+        action.element.remove();
+        redoStack.push(action);
+      }
+    }
+    function redoAction() {
+      if (redoStack.length === 0) return;
+      const action = redoStack.pop();
+      board.appendChild(action.element);
+      actionHistory.push(action);
+    }
+    
+    // 讓元件可拖曳
+    function makeDraggable(el) {
+      el.addEventListener("mousedown", componentMouseDown);
+    }
+    function componentMouseDown(e) {
+      e.stopPropagation();
+      currentlyDraggingComponent = e.currentTarget;
+      const compRect = currentlyDraggingComponent.getBoundingClientRect();
+      dragOffsetX = e.clientX - compRect.left;
+      dragOffsetY = e.clientY - compRect.top;
+      document.addEventListener("mousemove", componentMouseMove);
+      document.addEventListener("mouseup", componentMouseUp);
+    }
+    function componentMouseMove(e) {
+      if(!currentlyDraggingComponent) return;
+      const boardRect = board.getBoundingClientRect();
+      const newLeft = e.clientX - boardRect.left - dragOffsetX;
+      const newTop = e.clientY - boardRect.top - dragOffsetY;
+      currentlyDraggingComponent.style.left = `${newLeft}px`;
+      currentlyDraggingComponent.style.top = `${newTop}px`;
+    }
+    function componentMouseUp(e) {
+      currentlyDraggingComponent = null;
+      document.removeEventListener("mousemove", componentMouseMove);
+      document.removeEventListener("mouseup", componentMouseUp);
+    }
+    
+  </script>
+</body>
+<!-- 添加浮動回報問題按鈕 -->
+<div id="feedbackButton" onclick="window.open('https://forms.gle/224XcFLg5KHzPJ6j9', '_blank')">回報問題</div>
+
+<style>
+  #feedbackButton {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 60px;
+    height: 60px;
+    background-color: #FF5722; /* 橙色背景 */
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+    line-height: 60px;
+    border-radius: 50%; /* 圓形按鈕 */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* 增加陰影 */
+    cursor: pointer;
+    z-index: 10000; /* 確保在最上層 */
+  }
+  #feedbackButton:hover {
+    background-color: #E64A19; /* 懸停變暗 */
+  }
+</style>
+</html>
